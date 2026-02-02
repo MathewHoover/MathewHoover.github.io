@@ -26,67 +26,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for better styling
-st.markdown("""
-<style>
-    /* Header styling */
-    .main-header {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 2rem;
-        border-radius: 10px;
-        margin-bottom: 2rem;
-    }
-    .main-header h1 {
-        color: white;
-        margin: 0;
-        font-size: 2.5rem;
-    }
-    .main-header p {
-        color: rgba(255,255,255,0.9);
-        margin: 0.5rem 0 0 0;
-        font-size: 1.1rem;
-    }
-
-    /* Example question buttons */
-    .example-btn {
-        background: #f0f2f6;
-        border: 1px solid #e0e0e0;
-        border-radius: 8px;
-        padding: 8px 12px;
-        margin: 4px 0;
-        cursor: pointer;
-        transition: all 0.2s;
-    }
-    .example-btn:hover {
-        background: #e0e0e0;
-    }
-
-    /* Error container */
-    .error-container {
-        background: #fee2e2;
-        border: 1px solid #ef4444;
-        border-radius: 8px;
-        padding: 1rem;
-        margin: 1rem 0;
-    }
-
-    /* Chat message styling */
-    .user-message {
-        background: #e8f4f8;
-        border-radius: 15px 15px 5px 15px;
-        padding: 1rem;
-        margin: 0.5rem 0;
-    }
-    .assistant-message {
-        background: #f8f9fa;
-        border-radius: 15px 15px 15px 5px;
-        padding: 1rem;
-        margin: 0.5rem 0;
-        border-left: 4px solid #667eea;
-    }
-</style>
-""", unsafe_allow_html=True)
-
 # Example questions for users to try
 EXAMPLE_QUESTIONS = [
     "How many CSR AI calls were handled for Pros last week?",
@@ -97,12 +36,100 @@ EXAMPLE_QUESTIONS = [
 ]
 
 
+def apply_theme():
+    """Apply dark or light theme based on user preference."""
+    if st.session_state.get("dark_mode", False):
+        st.markdown("""
+        <style>
+            .stApp {
+                background-color: #1a1a2e;
+                color: #eaeaea;
+            }
+            .stMarkdown, .stText, p, span, label {
+                color: #eaeaea !important;
+            }
+            .metric-card {
+                background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%) !important;
+            }
+            div[data-testid="stExpander"] {
+                background-color: #16213e;
+                border-color: #4a5568;
+            }
+            .stDataFrame {
+                background-color: #16213e;
+            }
+            .main-header {
+                background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%) !important;
+            }
+            .user-message {
+                background: #2d3748 !important;
+                color: #eaeaea !important;
+            }
+            .assistant-message {
+                background: #1a1a2e !important;
+                border-left: 4px solid #667eea;
+                color: #eaeaea !important;
+            }
+        </style>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <style>
+            .metric-card {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            }
+            .main-header {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                padding: 2rem;
+                border-radius: 10px;
+                margin-bottom: 2rem;
+            }
+            .main-header h1 {
+                color: white;
+                margin: 0;
+                font-size: 2.5rem;
+            }
+            .main-header p {
+                color: rgba(255,255,255,0.9);
+                margin: 0.5rem 0 0 0;
+                font-size: 1.1rem;
+            }
+            .user-message {
+                background: #e8f4f8;
+                border-radius: 15px 15px 5px 15px;
+                padding: 1rem;
+                margin: 0.5rem 0;
+            }
+            .assistant-message {
+                background: #f8f9fa;
+                border-radius: 15px 15px 15px 5px;
+                padding: 1rem;
+                margin: 0.5rem 0;
+                border-left: 4px solid #667eea;
+            }
+            .error-container {
+                background: #fee2e2;
+                border: 1px solid #ef4444;
+                border-radius: 8px;
+                padding: 1rem;
+                margin: 1rem 0;
+            }
+        </style>
+        """, unsafe_allow_html=True)
+
+
 def init_session_state():
     """Initialize session state variables."""
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
     if "current_results" not in st.session_state:
         st.session_state.current_results = None
+    if "dark_mode" not in st.session_state:
+        st.session_state.dark_mode = False
+    if "chart_type_override" not in st.session_state:
+        st.session_state.chart_type_override = None
+    if "pending_question" not in st.session_state:
+        st.session_state.pending_question = None
     if "last_error" not in st.session_state:
         st.session_state.last_error = None
     if "failed_question" not in st.session_state:
@@ -177,71 +204,88 @@ def detect_visualization_type(df: pd.DataFrame) -> Optional[str]:
     if len(df.columns) < 2:
         return None
 
-    # Check for date/time columns
+    # Analyze columns
     date_cols = []
     numeric_cols = []
     categorical_cols = []
 
     for col in df.columns:
         col_lower = col.lower()
+
         # Check if column name suggests a date
         if any(hint in col_lower for hint in ['date', 'time', 'day', 'week', 'month', 'year', 'period']):
             date_cols.append(col)
-        # Try to detect datetime from values
+        elif pd.api.types.is_numeric_dtype(df[col]):
+            numeric_cols.append(col)
         elif df[col].dtype == 'object':
+            # Try to detect datetime from values
             try:
                 pd.to_datetime(df[col].head())
                 date_cols.append(col)
             except (ValueError, TypeError):
-                if df[col].nunique() < len(df) * 0.5:
+                # More lenient categorical detection:
+                # If it's a string column with reasonable number of unique values, treat as categorical
+                # Allow up to 50 unique values or all unique if less than 20 rows
+                unique_count = df[col].nunique()
+                if unique_count <= 50 or (len(df) <= 20 and unique_count == len(df)):
                     categorical_cols.append(col)
-        elif pd.api.types.is_numeric_dtype(df[col]):
-            numeric_cols.append(col)
-        elif df[col].nunique() < len(df) * 0.5:
-            categorical_cols.append(col)
 
-    # Decision logic
+    # Decision logic - prioritize showing charts
     if date_cols and numeric_cols:
         return 'time_series'
     elif categorical_cols and numeric_cols:
-        if len(df) <= 10:
-            return 'pie' if len(categorical_cols) == 1 and len(numeric_cols) == 1 else 'bar'
+        # Use pie for small datasets, bar for larger
+        if len(df) <= 6:
+            return 'pie'
+        return 'bar'
+    elif len(df.columns) == 2 and numeric_cols:
+        # If we have 2 columns and one is numeric, assume first is category
         return 'bar'
     elif len(numeric_cols) >= 2:
         return 'bar'
     elif len(numeric_cols) == 1 and len(df) > 10:
         return 'histogram'
 
+    # Last resort: if we have 2+ columns and any numeric, try bar chart
+    if len(df.columns) >= 2 and numeric_cols:
+        return 'bar'
+
     return None
 
 
+def get_available_chart_types(df: pd.DataFrame) -> list:
+    """Return list of chart types that make sense for this data."""
+    if df.empty or len(df.columns) < 2:
+        return ['table']
+
+    types = ['table']
+    numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
+
+    if numeric_cols:
+        types.extend(['bar', 'pie'])
+        if len(df) > 5:
+            types.append('line')
+        if len(df) > 10:
+            types.append('histogram')
+
+    return types
+
+
 def create_visualization(df: pd.DataFrame, viz_type: str) -> Optional[go.Figure]:
-    """Create a Plotly visualization based on the detected type."""
+    """Create a Plotly visualization based on the specified type."""
     if df.empty:
         return None
 
     # Identify column types
-    date_cols = []
-    numeric_cols = []
-    categorical_cols = []
+    numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
+    non_numeric_cols = [col for col in df.columns if col not in numeric_cols]
 
-    for col in df.columns:
-        col_lower = col.lower()
-        if any(hint in col_lower for hint in ['date', 'time', 'day', 'week', 'month', 'year', 'period']):
-            date_cols.append(col)
-        elif pd.api.types.is_numeric_dtype(df[col]):
-            numeric_cols.append(col)
-        elif df[col].dtype == 'object':
-            try:
-                pd.to_datetime(df[col].head())
-                date_cols.append(col)
-            except (ValueError, TypeError):
-                categorical_cols.append(col)
+    # Default to first non-numeric as x, first numeric as y
+    x_col = non_numeric_cols[0] if non_numeric_cols else df.columns[0]
+    y_col = numeric_cols[0] if numeric_cols else df.columns[1] if len(df.columns) > 1 else df.columns[0]
 
     try:
-        if viz_type == 'time_series' and date_cols and numeric_cols:
-            x_col = date_cols[0]
-            y_col = numeric_cols[0]
+        if viz_type == 'time_series' or viz_type == 'line':
             fig = px.line(
                 df, x=x_col, y=y_col,
                 title=f"{y_col} over {x_col}",
@@ -251,15 +295,6 @@ def create_visualization(df: pd.DataFrame, viz_type: str) -> Optional[go.Figure]
             return fig
 
         elif viz_type == 'bar':
-            if categorical_cols and numeric_cols:
-                x_col = categorical_cols[0]
-                y_col = numeric_cols[0]
-            elif len(df.columns) >= 2:
-                x_col = df.columns[0]
-                y_col = df.columns[1] if pd.api.types.is_numeric_dtype(df[df.columns[1]]) else df.columns[0]
-            else:
-                return None
-
             fig = px.bar(
                 df, x=x_col, y=y_col,
                 title=f"{y_col} by {x_col}"
@@ -267,12 +302,12 @@ def create_visualization(df: pd.DataFrame, viz_type: str) -> Optional[go.Figure]
             fig.update_layout(xaxis_title=x_col, yaxis_title=y_col)
             return fig
 
-        elif viz_type == 'pie' and categorical_cols and numeric_cols:
+        elif viz_type == 'pie':
             fig = px.pie(
                 df,
-                names=categorical_cols[0],
-                values=numeric_cols[0],
-                title=f"Distribution of {numeric_cols[0]} by {categorical_cols[0]}"
+                names=x_col,
+                values=y_col,
+                title=f"Distribution of {y_col} by {x_col}"
             )
             return fig
 
@@ -320,7 +355,7 @@ def render_metric_display(df: pd.DataFrame):
         with cols[i] if len(numeric_cols) > 1 else cols[0]:
             st.markdown(
                 f"""
-                <div style="text-align: center; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; margin: 10px 0;">
+                <div class="metric-card" style="text-align: center; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; margin: 10px 0;">
                     <p style="color: rgba(255,255,255,0.8); font-size: 14px; margin: 0; text-transform: uppercase;">{col_name}</p>
                     <p style="color: white; font-size: 48px; font-weight: bold; margin: 10px 0;">{display_value}</p>
                 </div>
@@ -348,18 +383,26 @@ def add_to_history(question: str, response: dict):
         st.session_state.chat_history = st.session_state.chat_history[-MAX_HISTORY:]
 
 
-def run_question(question: str):
-    """Run a question and update state."""
-    st.session_state.pending_question = question
-
-
 def render_sidebar():
-    """Render the chat history sidebar."""
+    """Render the sidebar with settings, examples, and history."""
     with st.sidebar:
+        # Theme toggle
+        st.header("⚙️ Settings")
+        dark_mode = st.toggle(
+            "🌙 Dark Mode",
+            value=st.session_state.dark_mode,
+            key="dark_mode_toggle"
+        )
+        if dark_mode != st.session_state.dark_mode:
+            st.session_state.dark_mode = dark_mode
+            st.rerun()
+
+        st.divider()
+
         # Example questions section
         st.header("💡 Try These Examples")
         for example in EXAMPLE_QUESTIONS:
-            if st.button(example, key=f"example_{example}", use_container_width=True):
+            if st.button(example, key=f"example_{hash(example)}", use_container_width=True):
                 st.session_state.pending_question = example
                 st.rerun()
 
@@ -377,7 +420,7 @@ def render_sidebar():
                 st.session_state.current_results = None
                 st.rerun()
 
-            # Display history items (most recent first, limit to MAX_HISTORY)
+            # Display history items (most recent first)
             for i, item in enumerate(reversed(st.session_state.chat_history[-MAX_HISTORY:])):
                 idx = len(st.session_state.chat_history) - 1 - i
                 truncated = item['question'][:35] + "..." if len(item['question']) > 35 else item['question']
@@ -388,6 +431,7 @@ def render_sidebar():
                         st.write(summary_display)
                     if st.button("Load Result", key=f"load_{idx}", use_container_width=True):
                         st.session_state.current_results = item
+                        st.session_state.chart_type_override = None
                         st.rerun()
                     if st.button("Re-run Query", key=f"rerun_{idx}", use_container_width=True):
                         st.session_state.pending_question = item['question']
@@ -398,7 +442,7 @@ def render_error_with_retry():
     """Render error message with retry button."""
     if st.session_state.last_error:
         st.markdown(f"""
-        <div class="error-container">
+        <div class="error-container" style="background: #fee2e2; border: 1px solid #ef4444; border-radius: 8px; padding: 1rem; margin: 1rem 0;">
             <strong>⚠️ Something went wrong</strong><br>
             {st.session_state.last_error}
         </div>
@@ -417,14 +461,14 @@ def render_main_content():
     """Render the main content area."""
     # Header
     st.markdown("""
-    <div class="main-header">
-        <h1>📊 Analytics Assistant</h1>
-        <p>Ask questions about your AI product usage in plain English. I'll query the data and visualize the results for you.</p>
+    <div class="main-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 2rem; border-radius: 10px; margin-bottom: 2rem;">
+        <h1 style="color: white; margin: 0; font-size: 2.5rem;">📊 Analytics Assistant</h1>
+        <p style="color: rgba(255,255,255,0.9); margin: 0.5rem 0 0 0; font-size: 1.1rem;">Ask questions about your AI product usage in plain English. I'll query the data and visualize the results for you.</p>
     </div>
     """, unsafe_allow_html=True)
 
     # Check for pending question (from examples or re-run)
-    if "pending_question" in st.session_state and st.session_state.pending_question:
+    if st.session_state.pending_question:
         question = st.session_state.pending_question
         st.session_state.pending_question = None
 
@@ -439,17 +483,18 @@ def render_main_content():
                     "sql": response.get("sql", ""),
                     "results": response.get("results", [])
                 }
+                st.session_state.chart_type_override = None
         st.rerun()
 
-    # Query input with chat-like styling
+    # Query input
     st.markdown("### 💬 Ask a Question")
     with st.form("query_form", clear_on_submit=True):
         question = st.text_input(
             "Your Question",
-            placeholder="e.g., How many CSR AI calls were made last week?",
+            placeholder="e.g., How many CSR AI calls were handled for Pros last week?",
             label_visibility="collapsed"
         )
-        col1, col2, col3 = st.columns([1, 1, 4])
+        col1, col2 = st.columns([1, 5])
         with col1:
             submitted = st.form_submit_button("🔍 Ask", use_container_width=True)
 
@@ -466,6 +511,7 @@ def render_main_content():
                     "sql": response.get("sql", ""),
                     "results": response.get("results", [])
                 }
+                st.session_state.chart_type_override = None
                 st.rerun()
 
     # Show error with retry if present
@@ -482,21 +528,20 @@ def render_results(data: dict):
 
     # User's question (chat bubble style)
     st.markdown(f"""
-    <div class="user-message">
+    <div class="user-message" style="background: #e8f4f8; border-radius: 15px 15px 5px 15px; padding: 1rem; margin: 0.5rem 0;">
         <strong>You asked:</strong> {data['question']}
     </div>
     """, unsafe_allow_html=True)
 
     # Assistant's response
-    st.markdown('<div class="assistant-message">', unsafe_allow_html=True)
-
-    # Summary
     if data['summary']:
-        st.markdown(f"**📝 Answer:** {data['summary']}")
+        st.markdown(f"""
+        <div class="assistant-message" style="background: #f8f9fa; border-radius: 15px 15px 15px 5px; padding: 1rem; margin: 0.5rem 0; border-left: 4px solid #667eea;">
+            <strong>📝 Answer:</strong> {data['summary']}
+        </div>
+        """, unsafe_allow_html=True)
     else:
-        st.markdown("**📝 Answer:** No summary available.")
-
-    st.markdown('</div>', unsafe_allow_html=True)
+        st.info("No summary available.")
 
     # SQL (expandable)
     with st.expander("🔧 View Generated SQL", expanded=False):
@@ -508,10 +553,11 @@ def render_results(data: dict):
     # Results table and visualization
     if data['results']:
         df = pd.DataFrame(data['results'])
-        viz_type = detect_visualization_type(df)
+        auto_viz_type = detect_visualization_type(df)
+        available_types = get_available_chart_types(df)
 
         # Single metric: show big number prominently, then data below
-        if viz_type == 'metric':
+        if auto_viz_type == 'metric':
             render_metric_display(df)
             st.divider()
             with st.expander("📋 Raw Data", expanded=False):
@@ -524,30 +570,59 @@ def render_results(data: dict):
                     mime="text/csv"
                 )
         else:
-            # Tabs for data and visualization
-            tab1, tab2 = st.tabs(["📈 Visualization", "📋 Data"])
+            # Chart type selector
+            col1, col2 = st.columns([3, 1])
+            with col2:
+                # Determine current selection
+                current_type = st.session_state.chart_type_override or auto_viz_type or 'bar'
+                if current_type not in available_types:
+                    current_type = available_types[1] if len(available_types) > 1 else available_types[0]
 
-            with tab1:
-                if viz_type:
-                    fig = create_visualization(df, viz_type)
-                    if fig:
-                        st.plotly_chart(fig, use_container_width=True)
-                    else:
-                        st.info("Could not generate a visualization for this data.")
+                chart_labels = {
+                    'table': '📋 Table',
+                    'bar': '📊 Bar Chart',
+                    'pie': '🥧 Pie Chart',
+                    'line': '📈 Line Chart',
+                    'histogram': '📉 Histogram'
+                }
+
+                selected = st.selectbox(
+                    "View as:",
+                    options=available_types,
+                    index=available_types.index(current_type) if current_type in available_types else 0,
+                    format_func=lambda x: chart_labels.get(x, x),
+                    key="chart_selector"
+                )
+
+                if selected != st.session_state.chart_type_override:
+                    st.session_state.chart_type_override = selected
+
+            # Use selected or auto-detected type
+            viz_type = st.session_state.chart_type_override or auto_viz_type
+
+            # Render based on selection
+            if viz_type and viz_type != 'table':
+                fig = create_visualization(df, viz_type)
+                if fig:
+                    st.plotly_chart(fig, use_container_width=True)
                 else:
-                    st.info("📊 This data is best viewed as a table. Check the Data tab.")
-
-            with tab2:
+                    st.dataframe(df, use_container_width=True)
+            else:
                 st.dataframe(df, use_container_width=True)
 
-                # Export button
-                csv = df.to_csv(index=False)
-                st.download_button(
-                    label="📥 Download CSV",
-                    data=csv,
-                    file_name=f"query_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv"
-                )
+            # Always show data table in expander if chart is shown
+            if viz_type and viz_type != 'table':
+                with st.expander("📋 View Raw Data", expanded=False):
+                    st.dataframe(df, use_container_width=True)
+
+            # Export button
+            csv = df.to_csv(index=False)
+            st.download_button(
+                label="📥 Download CSV",
+                data=csv,
+                file_name=f"query_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
     else:
         st.warning("No data results to display.")
 
@@ -555,6 +630,7 @@ def render_results(data: dict):
 def main():
     """Main application entry point."""
     init_session_state()
+    apply_theme()
     render_sidebar()
     render_main_content()
 
