@@ -57,9 +57,18 @@ def detect_visualization_type(df: pd.DataFrame) -> Optional[str]:
     """
     Auto-detect the appropriate visualization type based on data characteristics.
 
-    Returns: 'time_series', 'bar', 'pie', 'histogram', or None
+    Returns: 'metric', 'time_series', 'bar', 'pie', 'histogram', or None
     """
-    if df.empty or len(df.columns) < 2:
+    if df.empty:
+        return None
+
+    # Single metric detection: 1 row with numeric value(s)
+    if len(df) == 1:
+        numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
+        if numeric_cols:
+            return 'metric'
+
+    if len(df.columns) < 2:
         return None
 
     # Check for date/time columns
@@ -175,6 +184,50 @@ def create_visualization(df: pd.DataFrame, viz_type: str) -> Optional[go.Figure]
     return None
 
 
+def render_metric_display(df: pd.DataFrame):
+    """Render a big number display for single metric results."""
+    if df.empty or len(df) != 1:
+        return
+
+    row = df.iloc[0]
+    numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
+    non_numeric_cols = [col for col in df.columns if col not in numeric_cols]
+
+    # Display metrics in columns
+    cols = st.columns(len(numeric_cols)) if len(numeric_cols) > 1 else [st.container()]
+
+    for i, col_name in enumerate(numeric_cols):
+        value = row[col_name]
+        # Format large numbers
+        if isinstance(value, (int, float)):
+            if abs(value) >= 1_000_000:
+                display_value = f"{value/1_000_000:,.1f}M"
+            elif abs(value) >= 1_000:
+                display_value = f"{value/1_000:,.1f}K"
+            elif isinstance(value, float):
+                display_value = f"{value:,.2f}"
+            else:
+                display_value = f"{value:,}"
+        else:
+            display_value = str(value)
+
+        with cols[i] if len(numeric_cols) > 1 else cols[0]:
+            st.markdown(
+                f"""
+                <div style="text-align: center; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; margin: 10px 0;">
+                    <p style="color: rgba(255,255,255,0.8); font-size: 14px; margin: 0; text-transform: uppercase;">{col_name}</p>
+                    <p style="color: white; font-size: 48px; font-weight: bold; margin: 10px 0;">{display_value}</p>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+    # Show any context/labels below
+    if non_numeric_cols:
+        context_parts = [f"**{col}:** {row[col]}" for col in non_numeric_cols]
+        st.markdown(" | ".join(context_parts))
+
+
 def add_to_history(question: str, response: dict):
     """Add a query and its response to the chat history."""
     st.session_state.chat_history.append({
@@ -270,33 +323,47 @@ def render_results(data: dict):
     # Results table and visualization
     if data['results']:
         df = pd.DataFrame(data['results'])
+        viz_type = detect_visualization_type(df)
 
-        # Tabs for data and visualization
-        tab1, tab2 = st.tabs(["📋 Data", "📈 Visualization"])
+        # Single metric: show big number prominently, then data below
+        if viz_type == 'metric':
+            render_metric_display(df)
+            st.divider()
+            with st.expander("📋 Raw Data", expanded=False):
+                st.dataframe(df, use_container_width=True)
+                csv = df.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download CSV",
+                    data=csv,
+                    file_name=f"query_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv"
+                )
+        else:
+            # Tabs for data and visualization
+            tab1, tab2 = st.tabs(["📋 Data", "📈 Visualization"])
 
-        with tab1:
-            st.markdown("### Raw Data")
-            st.dataframe(df, use_container_width=True)
+            with tab1:
+                st.markdown("### Raw Data")
+                st.dataframe(df, use_container_width=True)
 
-            # Export button
-            csv = df.to_csv(index=False)
-            st.download_button(
-                label="📥 Download CSV",
-                data=csv,
-                file_name=f"query_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv"
-            )
+                # Export button
+                csv = df.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download CSV",
+                    data=csv,
+                    file_name=f"query_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv"
+                )
 
-        with tab2:
-            viz_type = detect_visualization_type(df)
-            if viz_type:
-                fig = create_visualization(df, viz_type)
-                if fig:
-                    st.plotly_chart(fig, use_container_width=True)
+            with tab2:
+                if viz_type:
+                    fig = create_visualization(df, viz_type)
+                    if fig:
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.info("Could not generate a visualization for this data.")
                 else:
-                    st.info("Could not generate a visualization for this data.")
-            else:
-                st.info("This data doesn't appear suitable for automatic visualization.")
+                    st.info("This data doesn't appear suitable for automatic visualization.")
     else:
         st.warning("No data results to display.")
 
