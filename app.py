@@ -16,6 +16,7 @@ from typing import Optional
 
 # Configuration
 N8N_WEBHOOK_URL = st.secrets.get("N8N_WEBHOOK_URL", "YOUR_WEBHOOK_URL_HERE")
+MAX_HISTORY = 10
 
 # Page configuration
 st.set_page_config(
@@ -25,6 +26,76 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Custom CSS for better styling
+st.markdown("""
+<style>
+    /* Header styling */
+    .main-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 2rem;
+        border-radius: 10px;
+        margin-bottom: 2rem;
+    }
+    .main-header h1 {
+        color: white;
+        margin: 0;
+        font-size: 2.5rem;
+    }
+    .main-header p {
+        color: rgba(255,255,255,0.9);
+        margin: 0.5rem 0 0 0;
+        font-size: 1.1rem;
+    }
+
+    /* Example question buttons */
+    .example-btn {
+        background: #f0f2f6;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 8px 12px;
+        margin: 4px 0;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .example-btn:hover {
+        background: #e0e0e0;
+    }
+
+    /* Error container */
+    .error-container {
+        background: #fee2e2;
+        border: 1px solid #ef4444;
+        border-radius: 8px;
+        padding: 1rem;
+        margin: 1rem 0;
+    }
+
+    /* Chat message styling */
+    .user-message {
+        background: #e8f4f8;
+        border-radius: 15px 15px 5px 15px;
+        padding: 1rem;
+        margin: 0.5rem 0;
+    }
+    .assistant-message {
+        background: #f8f9fa;
+        border-radius: 15px 15px 15px 5px;
+        padding: 1rem;
+        margin: 0.5rem 0;
+        border-left: 4px solid #667eea;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# Example questions for users to try
+EXAMPLE_QUESTIONS = [
+    "How many AI calls were made last week?",
+    "Show daily usage for the past month",
+    "Compare usage by product type",
+    "What's the total cost this quarter?",
+    "Top 10 users by API calls",
+]
+
 
 def init_session_state():
     """Initialize session state variables."""
@@ -32,6 +103,10 @@ def init_session_state():
         st.session_state.chat_history = []
     if "current_results" not in st.session_state:
         st.session_state.current_results = None
+    if "last_error" not in st.session_state:
+        st.session_state.last_error = None
+    if "failed_question" not in st.session_state:
+        st.session_state.failed_question = None
 
 
 def query_webhook(question: str) -> Optional[dict]:
@@ -44,12 +119,43 @@ def query_webhook(question: str) -> Optional[dict]:
             timeout=60
         )
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+
+        # Check for SQL errors in response
+        if data.get("error"):
+            st.session_state.last_error = data.get("error")
+            st.session_state.failed_question = question
+            return None
+
+        # Clear any previous errors on success
+        st.session_state.last_error = None
+        st.session_state.failed_question = None
+        return data
+
+    except requests.exceptions.Timeout:
+        st.session_state.last_error = "Request timed out. The query might be too complex or the server is busy."
+        st.session_state.failed_question = question
+        return None
+    except requests.exceptions.ConnectionError:
+        st.session_state.last_error = "Could not connect to the analytics server. Please check your internet connection."
+        st.session_state.failed_question = question
+        return None
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 404:
+            st.session_state.last_error = "Analytics API endpoint not found. Please check the webhook configuration."
+        elif e.response.status_code == 500:
+            st.session_state.last_error = "Server error occurred. Please try again later."
+        else:
+            st.session_state.last_error = f"HTTP Error: {e.response.status_code}"
+        st.session_state.failed_question = question
+        return None
     except requests.exceptions.RequestException as e:
-        st.error(f"Error connecting to the analytics API: {str(e)}")
+        st.session_state.last_error = f"Request failed: {str(e)}"
+        st.session_state.failed_question = question
         return None
     except json.JSONDecodeError:
-        st.error("Error parsing response from the analytics API")
+        st.session_state.last_error = "Received invalid response from the server."
+        st.session_state.failed_question = question
         return None
 
 
@@ -237,15 +343,33 @@ def add_to_history(question: str, response: dict):
         "sql": response.get("sql", ""),
         "results": response.get("results", [])
     })
+    # Keep only last MAX_HISTORY items
+    if len(st.session_state.chat_history) > MAX_HISTORY:
+        st.session_state.chat_history = st.session_state.chat_history[-MAX_HISTORY:]
+
+
+def run_question(question: str):
+    """Run a question and update state."""
+    st.session_state.pending_question = question
 
 
 def render_sidebar():
     """Render the chat history sidebar."""
     with st.sidebar:
-        st.header("📜 Query History")
+        # Example questions section
+        st.header("💡 Try These Examples")
+        for example in EXAMPLE_QUESTIONS:
+            if st.button(example, key=f"example_{example}", use_container_width=True):
+                st.session_state.pending_question = example
+                st.rerun()
+
+        st.divider()
+
+        # Query history section
+        st.header("📜 Recent Queries")
 
         if not st.session_state.chat_history:
-            st.info("No queries yet. Ask a question to get started!")
+            st.caption("Your query history will appear here")
         else:
             # Clear history button
             if st.button("🗑️ Clear History", use_container_width=True):
@@ -253,38 +377,85 @@ def render_sidebar():
                 st.session_state.current_results = None
                 st.rerun()
 
-            st.divider()
-
-            # Display history items (most recent first)
-            for i, item in enumerate(reversed(st.session_state.chat_history)):
+            # Display history items (most recent first, limit to MAX_HISTORY)
+            for i, item in enumerate(reversed(st.session_state.chat_history[-MAX_HISTORY:])):
                 idx = len(st.session_state.chat_history) - 1 - i
-                with st.expander(f"🔍 {item['question'][:40]}...", expanded=False):
+                truncated = item['question'][:35] + "..." if len(item['question']) > 35 else item['question']
+                with st.expander(f"🔍 {truncated}", expanded=False):
                     st.caption(f"🕐 {item['timestamp']}")
-                    st.write(item['summary'][:200] + "..." if len(item['summary']) > 200 else item['summary'])
-                    if st.button("Load", key=f"load_{idx}", use_container_width=True):
+                    if item['summary']:
+                        summary_display = item['summary'][:150] + "..." if len(item['summary']) > 150 else item['summary']
+                        st.write(summary_display)
+                    if st.button("Load Result", key=f"load_{idx}", use_container_width=True):
                         st.session_state.current_results = item
                         st.rerun()
+                    if st.button("Re-run Query", key=f"rerun_{idx}", use_container_width=True):
+                        st.session_state.pending_question = item['question']
+                        st.rerun()
+
+
+def render_error_with_retry():
+    """Render error message with retry button."""
+    if st.session_state.last_error:
+        st.markdown(f"""
+        <div class="error-container">
+            <strong>⚠️ Something went wrong</strong><br>
+            {st.session_state.last_error}
+        </div>
+        """, unsafe_allow_html=True)
+
+        col1, col2 = st.columns([1, 4])
+        with col1:
+            if st.button("🔄 Retry", use_container_width=True):
+                if st.session_state.failed_question:
+                    st.session_state.pending_question = st.session_state.failed_question
+                    st.session_state.last_error = None
+                    st.rerun()
 
 
 def render_main_content():
     """Render the main content area."""
-    st.title("📊 Analytics Assistant")
-    st.markdown("Ask questions about AI product usage data in plain English.")
+    # Header
+    st.markdown("""
+    <div class="main-header">
+        <h1>📊 Analytics Assistant</h1>
+        <p>Ask questions about your AI product usage in plain English. I'll query the data and visualize the results for you.</p>
+    </div>
+    """, unsafe_allow_html=True)
 
-    # Query input
+    # Check for pending question (from examples or re-run)
+    if "pending_question" in st.session_state and st.session_state.pending_question:
+        question = st.session_state.pending_question
+        st.session_state.pending_question = None
+
+        with st.spinner("🔍 Analyzing your question..."):
+            response = query_webhook(question)
+
+            if response:
+                add_to_history(question, response)
+                st.session_state.current_results = {
+                    "question": question,
+                    "summary": response.get("summary", ""),
+                    "sql": response.get("sql", ""),
+                    "results": response.get("results", [])
+                }
+        st.rerun()
+
+    # Query input with chat-like styling
+    st.markdown("### 💬 Ask a Question")
     with st.form("query_form", clear_on_submit=True):
         question = st.text_input(
             "Your Question",
             placeholder="e.g., How many CSR AI calls were made last week?",
             label_visibility="collapsed"
         )
-        col1, col2 = st.columns([1, 5])
+        col1, col2, col3 = st.columns([1, 1, 4])
         with col1:
             submitted = st.form_submit_button("🔍 Ask", use_container_width=True)
 
     # Process query
     if submitted and question:
-        with st.spinner("Analyzing your question..."):
+        with st.spinner("🔍 Analyzing your question..."):
             response = query_webhook(question)
 
             if response:
@@ -297,24 +468,38 @@ def render_main_content():
                 }
                 st.rerun()
 
+    # Show error with retry if present
+    render_error_with_retry()
+
     # Display results
     if st.session_state.current_results:
         render_results(st.session_state.current_results)
 
 
 def render_results(data: dict):
-    """Render the query results."""
+    """Render the query results in a conversational style."""
     st.divider()
 
-    # Question
-    st.subheader(f"❓ {data['question']}")
+    # User's question (chat bubble style)
+    st.markdown(f"""
+    <div class="user-message">
+        <strong>You asked:</strong> {data['question']}
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Assistant's response
+    st.markdown('<div class="assistant-message">', unsafe_allow_html=True)
 
     # Summary
-    st.markdown("### 📝 Summary")
-    st.info(data['summary'] if data['summary'] else "No summary available.")
+    if data['summary']:
+        st.markdown(f"**📝 Answer:** {data['summary']}")
+    else:
+        st.markdown("**📝 Answer:** No summary available.")
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
     # SQL (expandable)
-    with st.expander("🔧 Generated SQL", expanded=False):
+    with st.expander("🔧 View Generated SQL", expanded=False):
         if data['sql']:
             st.code(data['sql'], language="sql")
         else:
@@ -340,10 +525,19 @@ def render_results(data: dict):
                 )
         else:
             # Tabs for data and visualization
-            tab1, tab2 = st.tabs(["📋 Data", "📈 Visualization"])
+            tab1, tab2 = st.tabs(["📈 Visualization", "📋 Data"])
 
             with tab1:
-                st.markdown("### Raw Data")
+                if viz_type:
+                    fig = create_visualization(df, viz_type)
+                    if fig:
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.info("Could not generate a visualization for this data.")
+                else:
+                    st.info("📊 This data is best viewed as a table. Check the Data tab.")
+
+            with tab2:
                 st.dataframe(df, use_container_width=True)
 
                 # Export button
@@ -354,16 +548,6 @@ def render_results(data: dict):
                     file_name=f"query_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                     mime="text/csv"
                 )
-
-            with tab2:
-                if viz_type:
-                    fig = create_visualization(df, viz_type)
-                    if fig:
-                        st.plotly_chart(fig, use_container_width=True)
-                    else:
-                        st.info("Could not generate a visualization for this data.")
-                else:
-                    st.info("This data doesn't appear suitable for automatic visualization.")
     else:
         st.warning("No data results to display.")
 
