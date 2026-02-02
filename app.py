@@ -26,6 +26,53 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Custom CSS for better styling
+st.markdown("""
+<style>
+    /* Header styling */
+    .main-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 2rem;
+        border-radius: 10px;
+        margin-bottom: 2rem;
+    }
+    .main-header h1 {
+        color: white;
+        margin: 0;
+        font-size: 2.5rem;
+    }
+    .main-header p {
+        color: rgba(255,255,255,0.9);
+        margin: 0.5rem 0 0 0;
+        font-size: 1.1rem;
+    }
+
+    /* Error container */
+    .error-container {
+        background: #fee2e2;
+        border: 1px solid #ef4444;
+        border-radius: 8px;
+        padding: 1rem;
+        margin: 1rem 0;
+    }
+
+    /* Chat message styling */
+    .user-message {
+        background: #e8f4f8;
+        border-radius: 15px 15px 5px 15px;
+        padding: 1rem;
+        margin: 0.5rem 0;
+    }
+    .assistant-message {
+        background: #f8f9fa;
+        border-radius: 15px 15px 15px 5px;
+        padding: 1rem;
+        margin: 0.5rem 0;
+        border-left: 4px solid #667eea;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # Example questions for users to try
 EXAMPLE_QUESTIONS = [
     "How many CSR AI calls were handled for Pros last week?",
@@ -36,104 +83,20 @@ EXAMPLE_QUESTIONS = [
 ]
 
 
-def apply_theme():
-    """Apply dark or light theme based on user preference."""
-    if st.session_state.get("dark_mode", False):
-        st.markdown("""
-        <style>
-            .stApp {
-                background-color: #1a1a2e;
-                color: #eaeaea;
-            }
-            .stMarkdown, .stText, p, span, label {
-                color: #eaeaea !important;
-            }
-            .metric-card {
-                background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%) !important;
-            }
-            div[data-testid="stExpander"] {
-                background-color: #16213e;
-                border-color: #4a5568;
-            }
-            .stDataFrame {
-                background-color: #16213e;
-            }
-            .main-header {
-                background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%) !important;
-            }
-            .user-message {
-                background: #2d3748 !important;
-                color: #eaeaea !important;
-            }
-            .assistant-message {
-                background: #1a1a2e !important;
-                border-left: 4px solid #667eea;
-                color: #eaeaea !important;
-            }
-        </style>
-        """, unsafe_allow_html=True)
-    else:
-        st.markdown("""
-        <style>
-            .metric-card {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            }
-            .main-header {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                padding: 2rem;
-                border-radius: 10px;
-                margin-bottom: 2rem;
-            }
-            .main-header h1 {
-                color: white;
-                margin: 0;
-                font-size: 2.5rem;
-            }
-            .main-header p {
-                color: rgba(255,255,255,0.9);
-                margin: 0.5rem 0 0 0;
-                font-size: 1.1rem;
-            }
-            .user-message {
-                background: #e8f4f8;
-                border-radius: 15px 15px 5px 15px;
-                padding: 1rem;
-                margin: 0.5rem 0;
-            }
-            .assistant-message {
-                background: #f8f9fa;
-                border-radius: 15px 15px 15px 5px;
-                padding: 1rem;
-                margin: 0.5rem 0;
-                border-left: 4px solid #667eea;
-            }
-            .error-container {
-                background: #fee2e2;
-                border: 1px solid #ef4444;
-                border-radius: 8px;
-                padding: 1rem;
-                margin: 1rem 0;
-            }
-        </style>
-        """, unsafe_allow_html=True)
-
-
 def init_session_state():
     """Initialize session state variables."""
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
     if "current_results" not in st.session_state:
         st.session_state.current_results = None
-    if "dark_mode" not in st.session_state:
-        st.session_state.dark_mode = False
-    if "chart_type_override" not in st.session_state:
-        st.session_state.chart_type_override = None
-    if "pending_question" not in st.session_state:
-        st.session_state.pending_question = None
     if "last_error" not in st.session_state:
         st.session_state.last_error = None
     if "failed_question" not in st.session_state:
         st.session_state.failed_question = None
+    if "chart_type_override" not in st.session_state:
+        st.session_state.chart_type_override = None
+    if "pending_question" not in st.session_state:
+        st.session_state.pending_question = None
 
 
 def query_webhook(question: str) -> Optional[dict]:
@@ -211,7 +174,6 @@ def detect_visualization_type(df: pd.DataFrame) -> Optional[str]:
 
     for col in df.columns:
         col_lower = col.lower()
-
         # Check if column name suggests a date
         if any(hint in col_lower for hint in ['date', 'time', 'day', 'week', 'month', 'year', 'period']):
             date_cols.append(col)
@@ -224,7 +186,6 @@ def detect_visualization_type(df: pd.DataFrame) -> Optional[str]:
                 date_cols.append(col)
             except (ValueError, TypeError):
                 # More lenient categorical detection:
-                # If it's a string column with reasonable number of unique values, treat as categorical
                 # Allow up to 50 unique values or all unique if less than 20 rows
                 unique_count = df[col].nunique()
                 if unique_count <= 50 or (len(df) <= 20 and unique_count == len(df)):
@@ -355,7 +316,7 @@ def render_metric_display(df: pd.DataFrame):
         with cols[i] if len(numeric_cols) > 1 else cols[0]:
             st.markdown(
                 f"""
-                <div class="metric-card" style="text-align: center; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; margin: 10px 0;">
+                <div style="text-align: center; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; margin: 10px 0;">
                     <p style="color: rgba(255,255,255,0.8); font-size: 14px; margin: 0; text-transform: uppercase;">{col_name}</p>
                     <p style="color: white; font-size: 48px; font-weight: bold; margin: 10px 0;">{display_value}</p>
                 </div>
@@ -384,21 +345,8 @@ def add_to_history(question: str, response: dict):
 
 
 def render_sidebar():
-    """Render the sidebar with settings, examples, and history."""
+    """Render the sidebar with examples and history."""
     with st.sidebar:
-        # Theme toggle
-        st.header("⚙️ Settings")
-        dark_mode = st.toggle(
-            "🌙 Dark Mode",
-            value=st.session_state.dark_mode,
-            key="dark_mode_toggle"
-        )
-        if dark_mode != st.session_state.dark_mode:
-            st.session_state.dark_mode = dark_mode
-            st.rerun()
-
-        st.divider()
-
         # Example questions section
         st.header("💡 Try These Examples")
         for example in EXAMPLE_QUESTIONS:
@@ -442,7 +390,7 @@ def render_error_with_retry():
     """Render error message with retry button."""
     if st.session_state.last_error:
         st.markdown(f"""
-        <div class="error-container" style="background: #fee2e2; border: 1px solid #ef4444; border-radius: 8px; padding: 1rem; margin: 1rem 0;">
+        <div class="error-container">
             <strong>⚠️ Something went wrong</strong><br>
             {st.session_state.last_error}
         </div>
@@ -461,9 +409,9 @@ def render_main_content():
     """Render the main content area."""
     # Header
     st.markdown("""
-    <div class="main-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 2rem; border-radius: 10px; margin-bottom: 2rem;">
-        <h1 style="color: white; margin: 0; font-size: 2.5rem;">📊 Analytics Assistant</h1>
-        <p style="color: rgba(255,255,255,0.9); margin: 0.5rem 0 0 0; font-size: 1.1rem;">Ask questions about your AI product usage in plain English. I'll query the data and visualize the results for you.</p>
+    <div class="main-header">
+        <h1>📊 Analytics Assistant</h1>
+        <p>Ask questions about your AI product usage in plain English. I'll query the data and visualize the results for you.</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -528,7 +476,7 @@ def render_results(data: dict):
 
     # User's question (chat bubble style)
     st.markdown(f"""
-    <div class="user-message" style="background: #e8f4f8; border-radius: 15px 15px 5px 15px; padding: 1rem; margin: 0.5rem 0;">
+    <div class="user-message">
         <strong>You asked:</strong> {data['question']}
     </div>
     """, unsafe_allow_html=True)
@@ -536,7 +484,7 @@ def render_results(data: dict):
     # Assistant's response
     if data['summary']:
         st.markdown(f"""
-        <div class="assistant-message" style="background: #f8f9fa; border-radius: 15px 15px 15px 5px; padding: 1rem; margin: 0.5rem 0; border-left: 4px solid #667eea;">
+        <div class="assistant-message">
             <strong>📝 Answer:</strong> {data['summary']}
         </div>
         """, unsafe_allow_html=True)
@@ -630,7 +578,6 @@ def render_results(data: dict):
 def main():
     """Main application entry point."""
     init_session_state()
-    apply_theme()
     render_sidebar()
     render_main_content()
 
