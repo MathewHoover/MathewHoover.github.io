@@ -89,11 +89,11 @@ st.markdown("""
 
 # Example questions for users to try
 EXAMPLE_QUESTIONS = [
-    "How many AI calls were made last week?",
-    "Show daily usage for the past month",
-    "Compare usage by product type",
-    "What's the total cost this quarter?",
-    "Top 10 users by API calls",
+    "How many CSR AI calls were handled for Pros last week?",
+    "What is the percentage of Pros who left feedback on Help AI this month?",
+    "Provide a breakdown of AI team usage in 2025. Group by month and exclude CSR AI and Type 1",
+    "Which AI Team Member has been used the most this year?",
+    "Which AI Team Member gets the most feedback?",
 ]
 
 
