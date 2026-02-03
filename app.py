@@ -13,6 +13,7 @@ import plotly.graph_objects as go
 from datetime import datetime
 import json
 import hashlib
+import uuid
 import io
 from typing import Optional
 
@@ -277,12 +278,15 @@ def init_session_state():
         st.session_state.feedback_expanded = {}  # query_id -> True/False for form visibility
 
 
-def query_webhook(question: str) -> Optional[dict]:
+def query_webhook(question: str, interaction_id: str) -> Optional[dict]:
     """Send a question to the n8n webhook and return the response."""
     try:
         response = requests.post(
             N8N_WEBHOOK_URL,
-            json={"question": question},
+            json={
+                "question": question,
+                "interaction_id": interaction_id
+            },
             headers={"Content-Type": "application/json"},
             timeout=60
         )
@@ -358,6 +362,7 @@ def build_feedback_payload(
     return {
         "type": "user_feedback",
         "timestamp": datetime.now().isoformat(),
+        "interaction_id": query_data.get("interaction_id", ""),
         "feedback": {
             "sentiment": sentiment,
             "selected_options": selected_options,
@@ -772,7 +777,8 @@ def render_main_content():
         st.session_state.pending_question = None
 
         with st.spinner("Analyzing your question..."):
-            response = query_webhook(question)
+            interaction_id = str(uuid.uuid4())
+            response = query_webhook(question, interaction_id)
 
             if response:
                 add_to_history(question, response)
@@ -781,7 +787,8 @@ def render_main_content():
                     "summary": response.get("summary", ""),
                     "sql": response.get("sql", ""),
                     "results": response.get("results", []),
-                    "timestamp": datetime.now().isoformat()
+                    "timestamp": datetime.now().isoformat(),
+                    "interaction_id": interaction_id
                 }
                 st.session_state.chart_type_override = None
         st.rerun()
@@ -801,7 +808,8 @@ def render_main_content():
     # Process query
     if submitted and question:
         with st.spinner("Analyzing your question..."):
-            response = query_webhook(question)
+            interaction_id = str(uuid.uuid4())
+            response = query_webhook(question, interaction_id)
 
             if response:
                 add_to_history(question, response)
@@ -810,7 +818,8 @@ def render_main_content():
                     "summary": response.get("summary", ""),
                     "sql": response.get("sql", ""),
                     "results": response.get("results", []),
-                    "timestamp": datetime.now().isoformat()
+                    "timestamp": datetime.now().isoformat(),
+                    "interaction_id": interaction_id
                 }
                 st.session_state.chart_type_override = None
                 st.rerun()
