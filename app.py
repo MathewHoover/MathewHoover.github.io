@@ -39,85 +39,50 @@ EXAMPLE_QUESTIONS = [
 
 
 def apply_theme():
-    """Apply dark or light theme based on user preference."""
-    if st.session_state.get("dark_mode", False):
-        st.markdown("""
-        <style>
-            .stApp {
-                background-color: #1a1a2e;
-                color: #eaeaea;
-            }
-            .stMarkdown, .stText, p, span, label {
-                color: #eaeaea !important;
-            }
-            .metric-card {
-                background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%) !important;
-            }
-            div[data-testid="stExpander"] {
-                background-color: #16213e;
-                border-color: #4a5568;
-            }
-            .stDataFrame {
-                background-color: #16213e;
-            }
-            .main-header {
-                background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%) !important;
-            }
-            .user-message {
-                background: #2d3748 !important;
-                color: #eaeaea !important;
-            }
-            .assistant-message {
-                background: #1a1a2e !important;
-                border-left: 4px solid #667eea;
-                color: #eaeaea !important;
-            }
-        </style>
-        """, unsafe_allow_html=True)
-    else:
-        st.markdown("""
-        <style>
-            .metric-card {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            }
-            .main-header {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                padding: 2rem;
-                border-radius: 10px;
-                margin-bottom: 2rem;
-            }
-            .main-header h1 {
-                color: white;
-                margin: 0;
-                font-size: 2.5rem;
-            }
-            .main-header p {
-                color: rgba(255,255,255,0.9);
-                margin: 0.5rem 0 0 0;
-                font-size: 1.1rem;
-            }
-            .user-message {
-                background: #e8f4f8;
-                border-radius: 15px 15px 5px 15px;
-                padding: 1rem;
-                margin: 0.5rem 0;
-            }
-            .assistant-message {
-                background: #f8f9fa;
-                border-radius: 15px 15px 15px 5px;
-                padding: 1rem;
-                margin: 0.5rem 0;
-                border-left: 4px solid #667eea;
-            }
-            .error-container {
-                background: #fee2e2;
-                border: 1px solid #ef4444;
-                border-radius: 8px;
-                padding: 1rem;
-                margin: 1rem 0;
-            }
-        </style>
-        """, unsafe_allow_html=True)
+    """Apply light theme styling."""
+    st.markdown("""
+    <style>
+        .metric-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .main-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 2rem;
+            border-radius: 10px;
+            margin-bottom: 2rem;
+        }
+        .main-header h1 {
+            color: white;
+            margin: 0;
+            font-size: 2.5rem;
+        }
+        .main-header p {
+            color: rgba(255,255,255,0.9);
+            margin: 0.5rem 0 0 0;
+            font-size: 1.1rem;
+        }
+        .user-message {
+            background: #e8f4f8;
+            border-radius: 15px 15px 5px 15px;
+            padding: 1rem;
+            margin: 0.5rem 0;
+        }
+        .assistant-message {
+            background: #f8f9fa;
+            border-radius: 15px 15px 15px 5px;
+            padding: 1rem;
+            margin: 0.5rem 0;
+            border-left: 4px solid #667eea;
+        }
+        .error-container {
+            background: #fee2e2;
+            border: 1px solid #ef4444;
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 1rem 0;
+        }
+    </style>
+    """, unsafe_allow_html=True)
 
 
 def init_session_state():
@@ -126,8 +91,6 @@ def init_session_state():
         st.session_state.chat_history = []
     if "current_results" not in st.session_state:
         st.session_state.current_results = None
-    if "dark_mode" not in st.session_state:
-        st.session_state.dark_mode = False
     if "chart_type_override" not in st.session_state:
         st.session_state.chart_type_override = None
     if "pending_question" not in st.session_state:
@@ -437,21 +400,8 @@ def add_to_history(question: str, response: dict):
 
 
 def render_sidebar():
-    """Render the sidebar with settings, examples, and history."""
+    """Render the sidebar with examples and history."""
     with st.sidebar:
-        # Theme toggle
-        st.header("Settings")
-        dark_mode = st.toggle(
-            "Dark Mode",
-            value=st.session_state.dark_mode,
-            key="dark_mode_toggle"
-        )
-        if dark_mode != st.session_state.dark_mode:
-            st.session_state.dark_mode = dark_mode
-            st.rerun()
-
-        st.divider()
-
         # Example questions section
         st.header("Try These Examples")
         for example in EXAMPLE_QUESTIONS:
@@ -757,21 +707,20 @@ def render_results(data: dict):
                     st.dataframe(df, use_container_width=True)
 
             # Export buttons
-            export_col1, export_col2, export_col3 = st.columns([1, 1, 4])
+            csv = df.to_csv(index=False)
 
-            with export_col1:
-                csv = df.to_csv(index=False)
-                st.download_button(
-                    label="Download CSV",
-                    data=csv,
-                    file_name=f"query_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
-
-            # PNG download button for charts
-            with export_col2:
-                if fig:
+            if fig:
+                # Show both CSV and PNG download buttons
+                col1, col2, col3 = st.columns([1, 1, 4])
+                with col1:
+                    st.download_button(
+                        label="Download CSV",
+                        data=csv,
+                        file_name=f"query_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        mime="text/csv",
+                        use_container_width=True
+                    )
+                with col2:
                     try:
                         img_bytes = fig.to_image(format="png", width=1200, height=600, scale=2)
                         st.download_button(
@@ -781,8 +730,16 @@ def render_results(data: dict):
                             mime="image/png",
                             use_container_width=True
                         )
-                    except Exception:
-                        pass  # Silently fail if kaleido not available
+                    except Exception as e:
+                        st.caption("PNG export unavailable")
+            else:
+                # Only CSV download when no chart
+                st.download_button(
+                    label="Download CSV",
+                    data=csv,
+                    file_name=f"query_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv"
+                )
 
     else:
         st.warning("No data results to display.")
